@@ -1,0 +1,52 @@
+openapi: 3.1.0
+info:
+  title: Аналитический кабинет «Истинный интеллект»
+  version: 0.1.0
+  description: Описывает реализованные маршруты. При изменении API обновляйте параметры, ответы и ошибки вместе с сервером и клиентом.
+servers:
+  - url: http://localhost:3020
+    description: Локальное окружение Docker Compose
+paths:
+  /api:
+    get:
+      operationId: getHello
+      security: []
+      summary: Стартовый маршрут сервера
+      responses:
+        "200":
+          description: Сервер отвечает
+          content:
+            text/html:
+              schema:
+                type: string
+                const: Hello World!
+  /api/health:
+    get:
+      operationId: checkHealth
+      security: []
+      summary: Проверить подключение к PostgreSQL
+      responses:
+        "200":
+          description: PostgreSQL выполнил проверочный запрос
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    const: ok
+        "503":
+          description: Проверочный запрос к PostgreSQL завершился ошибкой
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [statusCode, message, error]
+                properties:
+                  statusCode:
+                    const: 503
+                  message:
+                    const: PostgreSQL недоступен
+                  error:
+                    const: Service Unavailable

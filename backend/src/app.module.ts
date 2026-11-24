@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { createObserveModule } from '@nestjs/observe';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 
@@ -19,7 +20,16 @@ const observe =
 export const observeInstrument = observe ? ObserveInstrument : undefined;
 
 @Module({
-  imports: observe ? [observe] : [],
+  imports: [
+    ...(observe ? [observe] : []),
+    TypeOrmModule.forRoot({
+      type: 'postgres',
+      url: process.env.DATABASE_URL,
+      synchronize: false,
+      connectTimeoutMS: 2000,
+      extra: { query_timeout: 2000 },
+    }),
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
