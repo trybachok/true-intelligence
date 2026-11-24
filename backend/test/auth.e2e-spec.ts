@@ -70,4 +70,26 @@ describe('POST /api/auth/login', () => {
     expect(Number.isInteger(response.body.expiresIn)).toBe(true);
     expect(response.body.expiresIn).toBeGreaterThan(0);
   });
+
+  it('возвращает одинаковую ошибку при неверном пароле и неизвестном email', async () => {
+    const wrongPassword = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email, password: `${password}-incorrect` });
+    const unknownEmail = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: `unknown-${randomUUID()}@example.test`, password });
+
+    for (const response of [wrongPassword, unknownEmail]) {
+      expect(response.status).toBe(401);
+      expect(response.headers['content-type']).toMatch(/application\/json/);
+      expect(response.headers['www-authenticate']).toMatch(
+        /^Bearer(?:[ \t]|$)/i,
+      );
+      expect(response.body).toEqual({
+        statusCode: 401,
+        code: 'INVALID_CREDENTIALS',
+        message: 'Неверный email или пароль',
+      });
+    }
+  });
 });
