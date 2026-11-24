@@ -3,19 +3,23 @@ import { createObserveModule } from '@nestjs/observe';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 
-export const { ObserveModule, ObserveInstrument } = createObserveModule();
+const { ObserveModule, ObserveInstrument } = createObserveModule();
+const appKey = process.env.OBSERVE_APP_KEY;
+const appSecret = process.env.OBSERVE_APP_SECRET;
+const observe =
+  appKey && appSecret
+    ? ObserveModule.forRoot({
+        appKey,
+        appSecret,
+        runtimeMetrics: !process.versions?.['webcontainer'],
+        serviceId: 'nest-typescript-starter',
+      })
+    : undefined;
+
+export const observeInstrument = observe ? ObserveInstrument : undefined;
 
 @Module({
-  imports: [
-    // Distributed tracing, auto-correlated logs, request/job metrics, error
-    // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com
-    ObserveModule.forRoot({
-      appKey: process.env.OBSERVE_APP_KEY ?? '',
-      appSecret: process.env.OBSERVE_APP_SECRET ?? '',
-      runtimeMetrics: !Boolean(process.versions?.['webcontainer']),
-      serviceId: 'nest-typescript-starter',
-    }),
-  ],
+  imports: observe ? [observe] : [],
   controllers: [AppController],
   providers: [AppService],
 })

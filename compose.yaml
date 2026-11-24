@@ -1,0 +1,78 @@
+services:
+  frontend:
+    build: ./frontend
+    init: true
+    ports:
+      - "127.0.0.1:3010:3000"
+    environment:
+      BACKEND_URL: http://backend:3000
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on:
+      backend:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend
+          target: /app
+          initial_sync: true
+          ignore:
+            - Dockerfile
+            - package.json
+            - package-lock.json
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/package-lock.json
+        - action: rebuild
+          path: ./frontend/Dockerfile
+
+  backend:
+    build: ./backend
+    init: true
+    ports:
+      - "127.0.0.1:3020:3000"
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:?set POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api').then(response => process.exit(response.ok ? 0 : 1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./backend
+          target: /app
+          initial_sync: true
+          ignore:
+            - Dockerfile
+            - package.json
+            - package-lock.json
+        - action: rebuild
+          path: ./backend/package.json
+        - action: rebuild
+          path: ./backend/package-lock.json
+        - action: rebuild
+          path: ./backend/Dockerfile
+
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  postgres-data:
