@@ -64,6 +64,41 @@ describe('GET /api/companies', () => {
     }
   });
 
+  it('возвращает администратору все компании в порядке возрастания id', async () => {
+    const database = app.get<DataSource>(DataSource);
+    const { email, password, passwordHash } = createLoginCredentials();
+    const companies = await database.query<{ id: number; name: string }[]>(
+      'SELECT id, name FROM companies ORDER BY id',
+    );
+    expect(companies.length).toBeGreaterThanOrEqual(2);
+
+    await database.query(
+      `INSERT INTO users (company_id, email, password_hash, role)
+       VALUES (NULL, $1, $2, 'admin')`,
+      [email, passwordHash],
+    );
+
+    try {
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email, password })
+        .expect(200);
+      expect(login.body.accessToken).toBeTruthy();
+
+      await request(app.getHttpServer())
+        .get('/api/companies')
+        .set('Authorization', `Bearer ${login.body.accessToken}`)
+        .expect(200)
+        .expect('Content-Type', /application\/json/)
+        .expect(companies);
+    } finally {
+      await database.query('DELETE FROM users WHERE email = $1 AND role = $2', [
+        email,
+        'admin',
+      ]);
+    }
+  });
+
 });
 
 function createLoginCredentials() {
