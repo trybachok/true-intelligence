@@ -99,6 +99,18 @@ describe('GET /api/companies', () => {
     }
   });
 
+  it('возвращает ошибку аутентификации для запроса без токена', async () => {
+    await request(app.getHttpServer())
+      .get('/api/companies')
+      .expect(401)
+      .expect('Content-Type', /application\/json/)
+      .expect('WWW-Authenticate', /^Bearer(?:[ \t]|$)/i)
+      .expect({
+        statusCode: 401,
+        code: 'UNAUTHENTICATED',
+        message: 'Требуется вход в систему',
+      });
+  });
 });
 
 function createLoginCredentials() {
