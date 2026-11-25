@@ -86,15 +86,12 @@ describe('GET /api/branches/{branchId}/reviews', () => {
   }
 
   function expectedPage(review: ReviewFixture) {
-    const timestamp = review.publishedAt.toISOString().slice(0, 19);
     return {
       items: [
         {
           id: review.id,
           branchId: review.branchId,
-          publishedAt: expect.stringMatching(
-            new RegExp(`^${timestamp}(?:\\\\.0+)?(?:Z|\\\\+00:00)$`),
-          ),
+          publishedAt: review.publishedAt.toISOString(),
           rating: review.rating,
           body: review.body,
           status: review.status,
@@ -120,6 +117,14 @@ describe('GET /api/branches/{branchId}/reviews', () => {
     await reviews(ownReview.branchId)
       .set('Authorization', `Bearer ${token}`)
       .query({ rating: 4, status: 'pending' })
+      .expect(200, { items: [], nextBeforeId: null });
+  });
+
+  it('исключает отзыв с идентификатором, равным курсору', async () => {
+    const token = await loginAs(app, accounts.client);
+    await reviews(ownReview.branchId)
+      .auth(token, { type: 'bearer' })
+      .query({ beforeId: ownReview.id })
       .expect(200, { items: [], nextBeforeId: null });
   });
 

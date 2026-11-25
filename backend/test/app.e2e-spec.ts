@@ -29,6 +29,26 @@ describe('AppController (e2e)', () => {
       .expect('Hello World!');
   });
 
+  it.each(['/api', '/api/health'])(
+    'отклоняет параметры и тело запроса к %s',
+    async (path) => {
+      const expected = {
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+        message: 'Проверьте параметры запроса',
+      };
+      await request(app.getHttpServer())
+        .get(path)
+        .query({ unexpected: '1' })
+        .expect(400, expected);
+      await request(app.getHttpServer())
+        .get(path)
+        .send({})
+        .expect(400, expected);
+      expect(query).not.toHaveBeenCalled();
+    },
+  );
+
   it('returns 200 when PostgreSQL accepts a query', async () => {
     query.mockResolvedValue([{ '?column?': 1 }]);
 

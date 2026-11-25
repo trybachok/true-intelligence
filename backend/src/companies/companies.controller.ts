@@ -3,15 +3,9 @@ import { CurrentUser } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
 import type { Request } from 'express';
 import type { AuthUser } from '../auth/auth-user.js';
-import { rejectQueryParameters } from '../http/reject-query-parameters.js';
-import { rejectRequestBody } from '../http/reject-request-body.js';
+import { rejectUnexpectedInput } from '../http/reject-unexpected-input.js';
 import { parseResourceId } from '../http/resource-id.schema.js';
 import { CompaniesService } from './companies.service.js';
-
-function rejectUnexpectedInput(request: Request) {
-  rejectRequestBody(request);
-  rejectQueryParameters(request);
-}
 
 @Can.Anyone()
 @Controller('api/companies')

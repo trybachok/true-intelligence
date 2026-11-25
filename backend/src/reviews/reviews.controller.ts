@@ -8,12 +8,12 @@ import { parseResourceId } from '../http/resource-id.schema.js';
 import { parseReviewsQuery } from './reviews-query.js';
 import { ReviewsService } from './reviews.service.js';
 
-@Controller('api/companies')
+@Can.Anyone()
+@Controller('api')
 export class ReviewsController {
   constructor(private readonly reviews: ReviewsService) {}
 
-  @Get(':companyId/reviews')
-  @Can.Anyone()
+  @Get('companies/:companyId/reviews')
   listCompanyReviews(
     @CurrentUser() user: AuthUser,
     @Param('companyId') companyId: string,
@@ -23,6 +23,20 @@ export class ReviewsController {
     return this.reviews.listCompanyReviews(
       user,
       parseResourceId(companyId),
+      parseReviewsQuery(request.query),
+    );
+  }
+
+  @Get('branches/:branchId/reviews')
+  listBranchReviews(
+    @CurrentUser() user: AuthUser,
+    @Param('branchId') branchId: string,
+    @Req() request: Request,
+  ) {
+    rejectRequestBody(request);
+    return this.reviews.listBranchReviews(
+      user,
+      parseResourceId(branchId),
       parseReviewsQuery(request.query),
     );
   }

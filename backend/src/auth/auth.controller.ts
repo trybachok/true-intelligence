@@ -6,12 +6,12 @@ import {
   Post,
   Req,
   UnauthorizedException,
-  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { Public } from '@nestjs/authentication';
 import type { Request } from 'express';
 import Joi from 'joi';
 import { rejectQueryParameters } from '../http/reject-query-parameters.js';
+import { requireJson } from '../http/require-json.js';
 import { AuthService } from './auth.service.js';
 
 type LoginRequest = { email: string; password: string };
@@ -39,14 +39,7 @@ export class AuthController {
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')
   async login(@Req() request: Request) {
-    const mediaType = request
-      .get('Content-Type')
-      ?.split(';', 1)[0]
-      .trim()
-      .toLowerCase();
-    if (mediaType !== undefined && mediaType !== 'application/json') {
-      throw new UnsupportedMediaTypeException();
-    }
+    requireJson(request);
 
     const { error, value } = loginSchema.validate(request.body, {
       convert: false,

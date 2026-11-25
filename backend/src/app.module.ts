@@ -7,6 +7,7 @@ import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CompaniesModule } from './companies/companies.module.js';
 import { ReviewsModule } from './reviews/reviews.module.js';
+import { StatisticsModule } from './statistics/statistics.module.js';
 
 const { ObserveModule, ObserveInstrument } = createObserveModule();
 const appKey = process.env.OBSERVE_APP_KEY;
@@ -37,6 +38,7 @@ export const observeInstrument = observe ? ObserveInstrument : undefined;
     CompaniesModule,
     AnalyticsModule,
     ReviewsModule,
+    StatisticsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

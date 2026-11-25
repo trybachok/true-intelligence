@@ -23,12 +23,32 @@ export class ReviewsService {
   async listCompanyReviews(
     user: AuthUser,
     companyId: number,
-    { rating, status, beforeId, limit }: ReviewsQuery,
+    query: ReviewsQuery,
   ) {
     await this.companies.requireReadableCompany(user, companyId);
+    return this.listReviews({ companyId }, query);
+  }
 
+  async listBranchReviews(
+    user: AuthUser,
+    branchId: number,
+    query: ReviewsQuery,
+  ) {
+    const { companyId } = await this.companies.requireReadableBranch(
+      user,
+      branchId,
+    );
+    return this.listReviews({ companyId, branchId }, query);
+  }
+
+  private async listReviews(
+    { companyId, branchId }: { companyId: number; branchId?: number },
+    { rating, status, beforeId, limit }: ReviewsQuery,
+  ) {
     const params: (number | string)[] = [companyId, limit + 1];
     const filters = ['b.company_id = $1'];
+    if (branchId !== undefined)
+      filters.push(`r.branch_id = $${params.push(branchId)}`);
     if (rating !== undefined)
       filters.push(`r.rating = $${params.push(rating)}`);
     if (status !== undefined)

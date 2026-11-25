@@ -139,14 +139,20 @@ describe('POST /api/statistics/imports', () => {
     ];
   }
 
-  async function importMetrics(token: string, metrics: Metric[]): Promise<void> {
+  async function importMetrics(
+    token: string,
+    metrics: Metric[],
+  ): Promise<void> {
     fetchMetrics.mockResolvedValue(metrics);
     await importStatistics(token)
       .send(importInput())
       .expect(200, { processedDays: metrics.length });
   }
 
-  async function expectDailyMetrics(token: string, metric: Metric): Promise<void> {
+  async function expectDailyMetrics(
+    token: string,
+    metric: Metric,
+  ): Promise<void> {
     const { branchId, date, cardViews, ...counters } = metric;
     await request(app.getHttpServer())
       .get('/api/analytics')
@@ -179,6 +185,25 @@ describe('POST /api/statistics/imports', () => {
     expect(fetchMetrics.mock.calls).toEqual([[importInput()], [importInput()]]);
     await expectDailyMetrics(token, first);
     await expectDailyMetrics(token, second);
+  });
+
+  it('сохраняет по одной записи на день при параллельных импортах', async () => {
+    const token = await loginAs(app, accounts.admin);
+    const metrics = sourceMetrics();
+    fetchMetrics
+      .mockResolvedValueOnce(metrics)
+      .mockResolvedValueOnce([...metrics].reverse());
+
+    await Promise.all([
+      importStatistics(token)
+        .send(importInput())
+        .expect(200, { processedDays: 2 }),
+      importStatistics(token)
+        .send(importInput())
+        .expect(200, { processedDays: 2 }),
+    ]);
+
+    expect(await savedMetrics()).toEqual(metrics);
   });
 
   it('заменяет показатели за день и сохраняет показатели пропущенного дня', async () => {
@@ -243,6 +268,18 @@ describe('POST /api/statistics/imports', () => {
     fetchMetrics.mockRejectedValue(
       new DOMException('Тайм-аут источника', 'TimeoutError'),
     );
+
+    await importStatistics(token).send(importInput()).expect(504, {
+      statusCode: 504,
+      code: 'UPSTREAM_TIMEOUT',
+      message: 'Источник статистики не ответил вовремя',
+    });
+    expect(await savedMetrics()).toEqual([]);
+  });
+
+  it('возвращает 504, если источник не завершает запрос', async () => {
+    const token = await loginAs(app, accounts.admin);
+    fetchMetrics.mockImplementation(() => new Promise(() => {}));
 
     await importStatistics(token).send(importInput()).expect(504, {
       statusCode: 504,
@@ -320,6 +357,17 @@ describe('POST /api/statistics/imports', () => {
       code: 'VALIDATION_ERROR',
       message: 'Проверьте параметры запроса',
     });
+  });
+
+  it('отклоняет запрос с неверным Content-Type или параметрами URL', async () => {
+    const token = await loginAs(app, accounts.admin);
+
+    await importStatistics(token).type('text').send('invalid').expect(415);
+    await importStatistics(token)
+      .query({ unexpected: '1' })
+      .send(importInput())
+      .expect(400);
+    expect(fetchMetrics).not.toHaveBeenCalled();
   });
 
   it('возвращает 404 для отсутствующего филиала', async () => {

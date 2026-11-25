@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import Joi from 'joi';
 
-const maxPostgresInteger = 2_147_483_647;
+export const maxPostgresInteger = 2_147_483_647;
 
 export function decimalIntegerSchema(max: number) {
   return Joi.string<number>()
