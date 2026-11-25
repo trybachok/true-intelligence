@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Generated from the OpenAPI contract
+/app/api-client/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

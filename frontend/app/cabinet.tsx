@@ -9,9 +9,10 @@ import {
   useContext,
   useState,
 } from "react";
-import { fetchApi, type Session } from "./analytics-api";
+import { checkHealth, login, type LoginResponse } from "./api-client";
+import { apiErrorMessage } from "./api-config";
 
-const SessionContext = createContext<Session | null>(null);
+const SessionContext = createContext<LoginResponse | null>(null);
 
 export function useSession() {
   return useContext(SessionContext);
@@ -21,11 +22,11 @@ export function Cabinet({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const onReviewsPage = pathname === "/reviews";
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<LoginResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function login(event: FormEvent<HTMLFormElement>) {
+  async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (loading) return;
 
@@ -33,18 +34,17 @@ export function Cabinet({ children }: { children: ReactNode }) {
     setLoading(true);
     setError("");
     try {
-      const session = await fetchApi<Session>("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: fields.get("email"),
-          password: fields.get("password"),
-        }),
+      const { data } = await login({
+        body: {
+          email: String(fields.get("email") ?? ""),
+          password: String(fields.get("password") ?? ""),
+        },
         signal: AbortSignal.timeout(10000),
+        throwOnError: true,
       });
-      setSession(session);
+      setSession(data);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Не удалось войти.");
+      setError(apiErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -57,7 +57,10 @@ export function Cabinet({ children }: { children: ReactNode }) {
   async function checkConnection() {
     setHealth("loading");
     try {
-      await fetchApi("/api/health", { signal: AbortSignal.timeout(5000) });
+      await checkHealth({
+        signal: AbortSignal.timeout(5000),
+        throwOnError: true,
+      });
       setHealth("ok");
     } catch {
       setHealth("error");
@@ -99,7 +102,7 @@ export function Cabinet({ children }: { children: ReactNode }) {
         <main className="login-layout">
           <section className="surface login-panel">
             <h1>Вход в кабинет</h1>
-            <form onSubmit={login}>
+            <form onSubmit={signIn}>
               <label>
                 Email
                 <input

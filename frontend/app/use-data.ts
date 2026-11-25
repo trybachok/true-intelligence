@@ -1,49 +1,56 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { fetchApi } from "./analytics-api";
+import { useEffect, useEffectEvent, useState } from "react";
+import { apiErrorMessage } from "./api-config";
+
+type RequestOptions = {
+  auth: string;
+  signal: AbortSignal;
+  throwOnError: true;
+};
 
 export function useData<T>(
-  path: string | null,
+  key: string | number | null,
   token: string,
+  load: (options: RequestOptions) => Promise<{ data: T }>,
   keepPreviousData = false,
 ) {
   const [result, setResult] = useState<{
-    path: string;
+    key: string | number;
     token: string;
     data?: T;
     error?: string;
   }>();
 
+  const loadData = useEffectEvent(load);
+
   useEffect(() => {
-    if (!path) return;
+    if (key === null) return;
     const controller = new AbortController();
-    fetchApi<T>(path, {
-      headers: { Authorization: `Bearer ${token}` },
+    loadData({
+      auth: token,
+      throwOnError: true,
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
     }).then(
-      (data) => {
-        if (!controller.signal.aborted) setResult({ path, token, data });
+      ({ data }) => {
+        if (!controller.signal.aborted) setResult({ key, token, data });
       },
       (error: unknown) => {
         if (!controller.signal.aborted) {
           setResult({
-            path,
+            key,
             token,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Не удалось загрузить данные.",
+            error: apiErrorMessage(error),
           });
         }
       },
     );
     return () => controller.abort();
-  }, [path, token]);
+  }, [key, token]);
 
   const sameSession = result?.token === token;
-  const current = sameSession && result?.path === path;
-  const loading = path !== null && !current;
+  const current = sameSession && result?.key === key;
+  const loading = key !== null && !current;
 
   return {
     data:

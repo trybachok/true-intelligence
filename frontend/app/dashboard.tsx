@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import {
-  type Branch,
-  type Company,
-  type Report,
-  type Session,
-} from "./analytics-api";
+  getAnalytics,
+  listCompanies,
+  listCompanyBranches,
+  type Analytics,
+  type GetAnalyticsData,
+  type LoginResponse,
+} from "./api-client";
 import { useData } from "./use-data";
 
 const numberFormat = new Intl.NumberFormat("ru-RU");
@@ -40,7 +42,7 @@ const measures = [
   ["reviewCount", "Количество отзывов"],
 ] as const;
 
-export function Dashboard({ session }: { session: Session }) {
+export function Dashboard({ session }: { session: LoginResponse }) {
   const [company, setCompany] = useState(
     session.user.companyId?.toString() ?? "",
   );
@@ -48,20 +50,23 @@ export function Dashboard({ session }: { session: Session }) {
   const [period, setPeriod] = useState(initialPeriod);
   const { accessToken } = session;
 
-  const companies = useData<Company[]>("/api/companies", accessToken);
-  const branches = useData<Branch[]>(
-    company ? `/api/companies/${company}/branches` : null,
-    accessToken,
+  const companies = useData("companies", accessToken, listCompanies);
+  const companyId = company ? Number(company) : undefined;
+  const branches = useData(companyId ?? null, accessToken, (options) =>
+    listCompanyBranches({ ...options, path: { companyId: Number(company) } }),
   );
   const validPeriod = Boolean(
     period.from && period.to && period.from <= period.to,
   );
-  const query = new URLSearchParams(period);
-  if (company) query.set("companyId", company);
-  if (branch) query.set("branchId", branch);
-  const report = useData<Report>(
-    validPeriod ? `/api/analytics?${query}` : null,
+  const query: GetAnalyticsData["query"] = {
+    ...period,
+    companyId,
+    branchId: branch ? Number(branch) : undefined,
+  };
+  const report = useData(
+    validPeriod ? JSON.stringify(query) : null,
     accessToken,
+    (options) => getAnalytics({ ...options, query }),
     true,
   );
 
@@ -168,7 +173,7 @@ export function Dashboard({ session }: { session: Session }) {
   );
 }
 
-function ReportView({ report }: { report: Report }) {
+function ReportView({ report }: { report: Analytics }) {
   const days = report.dailyCardViews;
   const max = days.reduce(
     (highest, day) => Math.max(highest, day.cardViews),

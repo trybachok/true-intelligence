@@ -1,6 +1,9 @@
 services:
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      additional_contexts:
+        contracts: ./contracts
     init: true
     ports:
       - "127.0.0.1:3010:3000"
@@ -19,12 +22,17 @@ services:
             - Dockerfile
             - package.json
             - package-lock.json
+            - openapi-ts.config.ts
         - action: rebuild
           path: ./frontend/package.json
         - action: rebuild
           path: ./frontend/package-lock.json
         - action: rebuild
           path: ./frontend/Dockerfile
+        - action: rebuild
+          path: ./frontend/openapi-ts.config.ts
+        - action: rebuild
+          path: ./contracts/openapi.yaml
 
   backend:
     build: ./backend

@@ -1,7 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { type Branch, type Company, type Session } from "../analytics-api";
+import {
+  listBranchReviews,
+  listCompanies,
+  listCompanyBranches,
+  listCompanyReviews,
+  type ListCompanyReviewsData,
+  type LoginResponse,
+  type ReviewStatus,
+} from "../api-client";
 import { useSession } from "../cabinet";
 import { useData } from "../use-data";
 
@@ -15,52 +23,51 @@ const dateFormat = new Intl.DateTimeFormat("ru-RU", {
   timeZone: "UTC",
 });
 
-type ReviewPage = {
-  items: {
-    id: number;
-    branchId: number;
-    publishedAt: string;
-    rating: number;
-    body: string;
-    status: keyof typeof statuses;
-  }[];
-  nextBeforeId: number | null;
-};
-
 export default function Reviews() {
   const session = useSession();
   return session && <ReviewsList session={session} />;
 }
 
-function ReviewsList({ session: { accessToken, user } }: { session: Session }) {
+function ReviewsList({
+  session: { accessToken, user },
+}: {
+  session: LoginResponse;
+}) {
   const [selectedCompany, setCompany] = useState("");
   const [branch, setBranch] = useState("");
   const [rating, setRating] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<ReviewStatus | "">("");
   const [cursors, setCursors] = useState<number[]>([]);
-  const companies = useData<Company[]>("/api/companies", accessToken);
+  const companies = useData("companies", accessToken, listCompanies);
   const company =
     user.companyId?.toString() ||
     selectedCompany ||
     companies.data?.[0]?.id.toString() ||
     "";
-  const branches = useData<Branch[]>(
-    company ? `/api/companies/${company}/branches` : null,
-    accessToken,
+  const branches = useData(company || null, accessToken, (options) =>
+    listCompanyBranches({ ...options, path: { companyId: Number(company) } }),
   );
 
-  const filters = new URLSearchParams();
-  if (rating) filters.set("rating", rating);
-  if (status) filters.set("status", status);
-  const cursor = cursors.at(-1);
-  if (cursor !== undefined) filters.set("beforeId", String(cursor));
-
-  const scope = branch
-    ? `/api/branches/${branch}`
-    : `/api/companies/${company}`;
-  const reviews = useData<ReviewPage>(
-    company ? `${scope}/reviews?${filters}` : null,
+  const query: ListCompanyReviewsData["query"] = {
+    rating: rating ? Number(rating) : undefined,
+    status: status || undefined,
+    beforeId: cursors.at(-1),
+  };
+  const reviews = useData(
+    company ? JSON.stringify([company, branch, query]) : null,
     accessToken,
+    (options) =>
+      branch
+        ? listBranchReviews({
+            ...options,
+            path: { branchId: Number(branch) },
+            query,
+          })
+        : listCompanyReviews({
+            ...options,
+            path: { companyId: Number(company) },
+            query,
+          }),
   );
   const error = companies.error ?? branches.error ?? reviews.error;
   const nextCursor = reviews.data?.nextBeforeId;
@@ -134,7 +141,10 @@ function ReviewsList({ session: { accessToken, user } }: { session: Session }) {
           <select
             value={status}
             onChange={(event) => {
-              setStatus(event.target.value);
+              const value = event.target.value;
+              setStatus(
+                value === "pending" || value === "processed" ? value : "",
+              );
               setCursors([]);
             }}
           >
