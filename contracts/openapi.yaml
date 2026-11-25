@@ -172,6 +172,10 @@ paths:
       responses:
         "200":
           description: Итоговые показатели и дневной ряд просмотров
+          headers:
+            Cache-Control:
+              required: true
+              schema: { type: string, const: no-store }
           content:
             application/json:
               schema:

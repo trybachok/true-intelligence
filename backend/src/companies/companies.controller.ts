@@ -9,16 +9,14 @@ import { CurrentUser } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
 import type { Request } from 'express';
 import type { AuthUser } from '../auth/auth-user.js';
+import { rejectQueryParameters } from '../http/reject-query-parameters.js';
+import { rejectRequestBody } from '../http/reject-request-body.js';
+import { resourceIdSchema } from '../http/resource-id.schema.js';
 import { CompaniesService } from './companies.service.js';
 
 function rejectUnexpectedInput(request: Request) {
-  if (
-    Object.keys(request.query).length ||
-    Number(request.headers['content-length']) > 0 ||
-    request.headers['transfer-encoding']
-  ) {
-    throw new BadRequestException();
-  }
+  rejectRequestBody(request);
+  rejectQueryParameters(request);
 }
 
 @Can.Anyone()
@@ -39,10 +37,10 @@ export class CompaniesController {
     @Req() request: Request,
   ) {
     rejectUnexpectedInput(request);
-    const id = Number(companyId);
-    if (!/^[0-9]+$/.test(companyId) || id < 1 || id > 2147483647) {
-      throw new BadRequestException();
-    }
+    const { error, value: id } = resourceIdSchema
+      .required()
+      .validate(companyId, { convert: false });
+    if (error) throw new BadRequestException();
 
     return this.companies.listBranches(user, id);
   }

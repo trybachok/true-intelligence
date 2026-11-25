@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { createObserveModule } from '@nestjs/observe';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AnalyticsModule } from './analytics/analytics.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -33,6 +34,7 @@ export const observeInstrument = observe ? ObserveInstrument : undefined;
     }),
     AuthModule,
     CompaniesModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

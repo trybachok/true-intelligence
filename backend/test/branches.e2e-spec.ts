@@ -158,6 +158,21 @@ describe('GET /api/companies/{companyId}/branches', () => {
     }
   });
 
+  it('проверяет формат и диапазон идентификатора компании в пути', async () => {
+    const token = await loginAs(app, account.client);
+    for (const id of ['0', '2147483648', '1e2', '+1', '%201']) {
+      await request(app.getHttpServer())
+        .get(`/api/companies/${id}/branches`)
+        .auth(token, { type: 'bearer' })
+        .expect(400);
+    }
+
+    await request(app.getHttpServer())
+      .get(`/api/companies/00${fixture.ownCompanyId}/branches`)
+      .auth(token, { type: 'bearer' })
+      .expect(200, fixture.ownBranches);
+  });
+
   it('возвращает 404 для отсутствующей компании', async () => {
     const token = await loginAs(app, account.client);
 

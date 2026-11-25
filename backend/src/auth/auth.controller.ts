@@ -11,6 +11,7 @@ import {
 import { Public } from '@nestjs/authentication';
 import type { Request } from 'express';
 import Joi from 'joi';
+import { rejectQueryParameters } from '../http/reject-query-parameters.js';
 import { AuthService } from './auth.service.js';
 
 type LoginRequest = { email: string; password: string };
@@ -50,8 +51,8 @@ export class AuthController {
     const { error, value } = loginSchema.validate(request.body, {
       convert: false,
     });
-    if (error || Object.keys(request.query).length)
-      throw new BadRequestException();
+    if (error) throw new BadRequestException();
+    rejectQueryParameters(request);
 
     const result = await this.auth.login(value.email, value.password);
     if (!result) {

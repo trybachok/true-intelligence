@@ -148,6 +148,7 @@ describe('GET /api/analytics', () => {
       .query(period)
       .expect(200)
       .expect('Content-Type', /application\/json/)
+      .expect('Cache-Control', 'no-store')
       .expect({
         totals: {
           cardViews: 60,
@@ -262,6 +263,49 @@ describe('GET /api/analytics', () => {
       code: 'VALIDATION_ERROR',
       message: 'Проверьте параметры запроса',
     });
+  });
+
+  it('считает сводку администратора по выбранной компании', async () => {
+    const response = await analytics(await loginAs(app, accounts.admin))
+      .query({ ...period, companyId: fixture.otherCompanyId })
+      .expect(200);
+
+    expect(response.body.totals).toEqual({
+      cardViews: 90,
+      websiteClicks: 9,
+      calls: 8,
+      routeRequests: 7,
+      averageRating: 1,
+      reviewCount: 1,
+    });
+  });
+
+  it('возвращает 403 для явно запрошенной чужой компании', async () => {
+    await analytics(await loginAs(app, accounts.client))
+      .query({ ...period, companyId: fixture.otherCompanyId })
+      .expect(403);
+  });
+
+  it.each(['branchId', 'companyId'])(
+    'возвращает 404 для отсутствующего ресурса %s',
+    async (field) => {
+      await analytics(await loginAs(app, accounts.client))
+        .query({ ...period, [field]: 2147483647 })
+        .expect(404, {
+          statusCode: 404,
+          code: 'NOT_FOUND',
+          message: 'Компания или филиал не найдены',
+        });
+    },
+  );
+
+  it('возвращает 400 при повторном параметре или теле запроса', async () => {
+    const token = await loginAs(app, accounts.admin);
+
+    await analytics(token)
+      .query(`from=${period.from}&from=${period.from}&to=${period.to}`)
+      .expect(400);
+    await analytics(token).query(period).send({}).expect(400);
   });
 
   it('возвращает 401 для запроса без токена', async () => {

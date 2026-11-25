@@ -26,28 +26,47 @@ export class CompaniesService {
   }
 
   async listBranches(user: AuthUser, companyId: number) {
-    const [company] = await this.database.query<Company[]>(
+    await this.requireReadableCompany(user, companyId);
+    return this.database.query<Branch[]>(
+      'SELECT id, company_id AS "companyId", name FROM branches WHERE company_id = $1 ORDER BY id',
+      [companyId],
+    );
+  }
+
+  async requireReadableCompany(user: AuthUser, companyId: number) {
+    const [company] = await this.database.query<{ id: number }[]>(
       'SELECT id FROM companies WHERE id = $1',
       [companyId],
     );
-
-    if (!company) {
-      throw new NotFoundException({
-        statusCode: 404,
-        code: 'NOT_FOUND',
-        message: 'Компания или филиал не найдены',
-      });
-    }
-
+    if (!company) throw this.notFound();
     await this.authorization.authorize(
       CompanyAccessPolicy,
       'read',
       user,
       company.id,
     );
-    return this.database.query<Branch[]>(
-      'SELECT id, company_id AS "companyId", name FROM branches WHERE company_id = $1 ORDER BY id',
-      [company.id],
+  }
+
+  async requireReadableBranch(user: AuthUser, branchId: number) {
+    const [branch] = await this.database.query<{ companyId: number }[]>(
+      'SELECT company_id AS "companyId" FROM branches WHERE id = $1',
+      [branchId],
     );
+    if (!branch) throw this.notFound();
+    await this.authorization.authorize(
+      CompanyAccessPolicy,
+      'read',
+      user,
+      branch.companyId,
+    );
+    return branch;
+  }
+
+  private notFound() {
+    return new NotFoundException({
+      statusCode: 404,
+      code: 'NOT_FOUND',
+      message: 'Компания или филиал не найдены',
+    });
   }
 }

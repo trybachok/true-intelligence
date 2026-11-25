@@ -132,6 +132,26 @@ describe('POST /api/auth/login', () => {
     },
   );
 
+  it('возвращает 400 при наличии параметров строки запроса', async () => {
+    await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .query({ companyId: 1 })
+      .send({ email, password })
+      .expect(400);
+  });
+
+  it('отклоняет ведущий ноль в идентификаторе JWT', async () => {
+    const signer = new JwtSigner({
+      key: process.env.JWT_SECRET!,
+      issuer: 'true-intelligence',
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/companies')
+      .auth(signer.sign({ sub: `0${userId}` }), { type: 'bearer' })
+      .expect(401);
+  });
+
   it('возвращает одинаковую ошибку при неверном пароле и неизвестном email', async () => {
     const wrongPassword = await request(app.getHttpServer())
       .post('/api/auth/login')

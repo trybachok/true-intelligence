@@ -4,6 +4,7 @@ import {
   JwtBearerProvider,
   type JwtClaims,
 } from '@nestjs/authentication';
+import { resourceIdSchema } from '../http/resource-id.schema.js';
 import type { AuthUser } from './auth-user.js';
 import { UsersRepository } from './users.repository.js';
 
@@ -18,9 +19,11 @@ export class JwtAuthProvider extends JwtBearerProvider<AuthUser> {
   }
 
   validate({ sub }: JwtClaims) {
-    if (!sub || !/^[1-9][0-9]*$/.test(sub)) return null;
+    const { error, value: id } = resourceIdSchema
+      .required()
+      .validate(sub, { convert: false });
+    if (error || String(id) !== sub) return null;
 
-    const id = Number(sub);
-    return id <= 2147483647 ? this.users.findUser(id) : null;
+    return this.users.findUser(id);
   }
 }
