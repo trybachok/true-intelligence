@@ -1,17 +1,11 @@
-import {
-  BadRequestException,
-  Controller,
-  Get,
-  Param,
-  Req,
-} from '@nestjs/common';
+import { Controller, Get, Param, Req } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
 import type { Request } from 'express';
 import type { AuthUser } from '../auth/auth-user.js';
 import { rejectQueryParameters } from '../http/reject-query-parameters.js';
 import { rejectRequestBody } from '../http/reject-request-body.js';
-import { resourceIdSchema } from '../http/resource-id.schema.js';
+import { parseResourceId } from '../http/resource-id.schema.js';
 import { CompaniesService } from './companies.service.js';
 
 function rejectUnexpectedInput(request: Request) {
@@ -37,11 +31,6 @@ export class CompaniesController {
     @Req() request: Request,
   ) {
     rejectUnexpectedInput(request);
-    const { error, value: id } = resourceIdSchema
-      .required()
-      .validate(companyId, { convert: false });
-    if (error) throw new BadRequestException();
-
-    return this.companies.listBranches(user, id);
+    return this.companies.listBranches(user, parseResourceId(companyId));
   }
 }

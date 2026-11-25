@@ -140,14 +140,7 @@ describe('GET /api/companies/{companyId}/reviews', () => {
   }
 
   function expectedReview({ publishedAt, ...review }: Review) {
-    // ISO допускает как секунды, так и дробную часть секунды.
-    const seconds = publishedAt.toISOString().slice(0, 19);
-    return {
-      ...review,
-      publishedAt: expect.stringMatching(
-        new RegExp(`^${seconds}(?:\\\\.0+)?Z$`),
-      ),
-    };
+    return { ...review, publishedAt: publishedAt.toISOString() };
   }
 
   it('фильтрует отзывы по рейтингу и статусу и выдаёт страницы по всем филиалам компании', async () => {
@@ -216,6 +209,20 @@ describe('GET /api/companies/{companyId}/reviews', () => {
       code: 'VALIDATION_ERROR',
       message: 'Проверьте параметры запроса',
     });
+  });
+
+  it('отклоняет повторные и неизвестные параметры и тело GET-запроса', async () => {
+    const token = await loginAs(app, accounts.client);
+    for (const query of ['limit=2&limit=3', 'sort=asc', 'beforeId=']) {
+      await reviews(fixture.ownCompanyId)
+        .auth(token, { type: 'bearer' })
+        .query(query)
+        .expect(400);
+    }
+    await reviews(fixture.ownCompanyId)
+      .auth(token, { type: 'bearer' })
+      .send({})
+      .expect(400);
   });
 
   it('возвращает 404 для отсутствующей компании', async () => {
