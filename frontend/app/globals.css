@@ -263,3 +263,33 @@ select:disabled {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+.topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reviews-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+
+.review-card {
+  padding: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.review-card p {
+  margin-top: 0.5rem;
+}

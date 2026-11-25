@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   type Branch,
   type Company,
-  fetchApi,
   type Report,
   type Session,
 } from "./analytics-api";
+import { useData } from "./use-data";
 
 const numberFormat = new Intl.NumberFormat("ru-RU");
 const dateFormat = new Intl.DateTimeFormat("ru-RU", {
@@ -28,57 +28,6 @@ function initialPeriod() {
   return {
     from: start.toISOString().slice(0, 10),
     to: today.toISOString().slice(0, 10),
-  };
-}
-
-function useData<T>(
-  path: string | null,
-  token: string,
-  keepPreviousData = false,
-) {
-  const [result, setResult] = useState<{
-    path: string;
-    token: string;
-    data?: T;
-    error?: string;
-  }>();
-
-  useEffect(() => {
-    if (!path) return;
-    const controller = new AbortController();
-    fetchApi<T>(path, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
-    }).then(
-      (data) => {
-        if (!controller.signal.aborted) setResult({ path, token, data });
-      },
-      (error: unknown) => {
-        if (!controller.signal.aborted) {
-          setResult({
-            path,
-            token,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Не удалось загрузить данные.",
-          });
-        }
-      },
-    );
-    return () => controller.abort();
-  }, [path, token]);
-
-  const sameSession = result?.token === token;
-  const current = sameSession && result?.path === path;
-  const loading = path !== null && !current;
-
-  return {
-    data: current || (loading && sameSession && keepPreviousData)
-      ? result?.data
-      : undefined,
-    error: current ? result?.error : undefined,
-    loading,
   };
 }
 

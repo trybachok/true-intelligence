@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
+import { Cabinet } from "./cabinet";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -18,7 +19,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="ru"
       className={`${geistSans.className} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <Cabinet>{children}</Cabinet>
+      </body>
     </html>
   );
 }
