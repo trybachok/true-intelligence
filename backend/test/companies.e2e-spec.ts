@@ -1,17 +1,14 @@
-import { randomBytes, randomUUID, scryptSync } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { AppModule } from '../src/app.module.js';
+import { hashTestPassword, httpTestModule, loginAs } from './http-test-support.js';
 
 describe('GET /api/companies', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    const module = await httpTestModule().compile();
     app = module.createNestApplication();
     await app.init();
   });
@@ -40,15 +37,11 @@ describe('GET /api/companies', () => {
         [company.id, email, passwordHash],
       );
 
-      const login = await request(app.getHttpServer())
-        .post('/api/auth/login')
-        .send({ email, password })
-        .expect(200);
-      expect(login.body.accessToken).toBeTruthy();
+      const token = await loginAs(app, { email, password });
 
       await request(app.getHttpServer())
         .get('/api/companies')
-        .set('Authorization', `Bearer ${login.body.accessToken}`)
+        .set('Authorization', `Bearer ${token}`)
         .expect(200)
         .expect('Content-Type', /application\/json/)
         .expect([company]);
@@ -79,15 +72,11 @@ describe('GET /api/companies', () => {
     );
 
     try {
-      const login = await request(app.getHttpServer())
-        .post('/api/auth/login')
-        .send({ email, password })
-        .expect(200);
-      expect(login.body.accessToken).toBeTruthy();
+      const token = await loginAs(app, { email, password });
 
       await request(app.getHttpServer())
         .get('/api/companies')
-        .set('Authorization', `Bearer ${login.body.accessToken}`)
+        .set('Authorization', `Bearer ${token}`)
         .expect(200)
         .expect('Content-Type', /application\/json/)
         .expect(companies);
@@ -116,7 +105,6 @@ describe('GET /api/companies', () => {
 function createLoginCredentials() {
   const email = `companies-${randomUUID()}@example.test`;
   const password = randomBytes(24).toString('hex');
-  const salt = randomBytes(16).toString('hex');
-  const passwordHash = `scrypt:${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
+  const passwordHash = hashTestPassword(password);
   return { email, password, passwordHash };
 }

@@ -1,9 +1,13 @@
-import { randomBytes, randomUUID, scryptSync } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { AppModule } from '../src/app.module.js';
+import {
+  deleteTestAccounts,
+  httpTestModule,
+  insertTestAccounts,
+  loginAs,
+} from './http-test-support.js';
 
 type Review = {
   id: number;
@@ -15,7 +19,6 @@ type Review = {
 };
 
 describe('GET /api/companies/{companyId}/reviews', () => {
-  const roles = ['client', 'admin'] as const;
   const accounts = {
     client: {
       email: `company-reviews-client-${randomUUID()}@example.test`,
@@ -38,9 +41,7 @@ describe('GET /api/companies/{companyId}/reviews', () => {
   };
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    const module = await httpTestModule().compile();
     app = module.createNestApplication();
     await app.init();
 
@@ -72,15 +73,7 @@ describe('GET /api/companies/{companyId}/reviews', () => {
       const secondBranchId = await branchId(ownCompanyId, 'Второй филиал');
       const otherBranchId = await branchId(otherCompanyId, 'Чужой филиал');
 
-      for (const role of roles) {
-        const { email, password } = accounts[role];
-        const salt = randomBytes(16).toString('hex');
-        const passwordHash = `scrypt:${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
-        await manager.query(
-          'INSERT INTO users (company_id, email, password_hash, role) VALUES ($1, $2, $3, $4)',
-          [role === 'client' ? ownCompanyId : null, email, passwordHash, role],
-        );
-      }
+      await insertTestAccounts(manager, accounts, ownCompanyId);
 
       const branchIds = [firstBranchId, secondBranchId, otherBranchId];
       const reviews = await manager.query<Review[]>(
@@ -124,10 +117,7 @@ describe('GET /api/companies/{companyId}/reviews', () => {
             'DELETE FROM reviews WHERE branch_id = ANY($1::integer[])',
             [fixture.branchIds],
           );
-          await manager.query(
-            'DELETE FROM users WHERE email = ANY($1::text[])',
-            [[accounts.client.email, accounts.admin.email]],
-          );
+          await deleteTestAccounts(manager, accounts);
           await manager.query(
             'DELETE FROM branches WHERE id = ANY($1::integer[])',
             [fixture.branchIds],
@@ -142,15 +132,6 @@ describe('GET /api/companies/{companyId}/reviews', () => {
       await app?.close();
     }
   });
-
-  async function accessToken(role: keyof typeof accounts): Promise<string> {
-    const login = await request(app.getHttpServer())
-      .post('/api/auth/login')
-      .send(accounts[role])
-      .expect(200);
-    expect(login.body.accessToken).toBeTruthy();
-    return login.body.accessToken;
-  }
 
   function reviews(companyId: number) {
     return request(app.getHttpServer()).get(
@@ -170,7 +151,7 @@ describe('GET /api/companies/{companyId}/reviews', () => {
   }
 
   it('фильтрует отзывы по рейтингу и статусу и выдаёт страницы по всем филиалам компании', async () => {
-    const token = await accessToken('client');
+    const token = await loginAs(app, accounts.client);
     const filters = { rating: 5, status: 'pending', limit: 1 };
     const [first, second] = fixture.matchingReviews;
 
@@ -195,7 +176,7 @@ describe('GET /api/companies/{companyId}/reviews', () => {
   });
 
   it('возвращает администратору отзывы выбранной компании', async () => {
-    const token = await accessToken('admin');
+    const token = await loginAs(app, accounts.admin);
     const response = await reviews(fixture.otherCompanyId)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -206,7 +187,7 @@ describe('GET /api/companies/{companyId}/reviews', () => {
   });
 
   it('возвращает пустую страницу, если фильтр не нашёл отзывы', async () => {
-    const token = await accessToken('client');
+    const token = await loginAs(app, accounts.client);
     await reviews(fixture.ownCompanyId)
       .set('Authorization', `Bearer ${token}`)
       .query({ rating: 1 })
@@ -214,7 +195,7 @@ describe('GET /api/companies/{companyId}/reviews', () => {
   });
 
   it('возвращает 403 для запроса отзывов чужой компании', async () => {
-    const token = await accessToken('client');
+    const token = await loginAs(app, accounts.client);
     await reviews(fixture.otherCompanyId)
       .set('Authorization', `Bearer ${token}`)
       .expect(403, {
@@ -225,7 +206,7 @@ describe('GET /api/companies/{companyId}/reviews', () => {
   });
 
   it('возвращает 400 для оценки вне допустимого диапазона', async () => {
-    const token = await accessToken('client');
+    const token = await loginAs(app, accounts.client);
     const response = await reviews(fixture.ownCompanyId)
       .set('Authorization', `Bearer ${token}`)
       .query({ rating: 6 })
@@ -238,7 +219,7 @@ describe('GET /api/companies/{companyId}/reviews', () => {
   });
 
   it('возвращает 404 для отсутствующей компании', async () => {
-    const token = await accessToken('admin');
+    const token = await loginAs(app, accounts.admin);
     await reviews(2147483647)
       .set('Authorization', `Bearer ${token}`)
       .expect(404, {

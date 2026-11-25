@@ -1,9 +1,13 @@
-import { randomBytes, randomUUID, scryptSync } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { AppModule } from '../src/app.module.js';
+import {
+  deleteTestAccounts,
+  httpTestModule,
+  insertTestAccounts,
+  loginAs,
+} from './http-test-support.js';
 
 type ReviewFixture = {
   id: number;
@@ -16,7 +20,6 @@ type ReviewFixture = {
 };
 
 describe('GET /api/branches/{branchId}/reviews', () => {
-  const roles = ['client', 'admin'] as const;
   const accounts = {
     client: {
       email: `branch-reviews-client-${randomUUID()}@example.test`,
@@ -35,9 +38,7 @@ describe('GET /api/branches/{branchId}/reviews', () => {
   let accountsCreated = false;
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    const module = await httpTestModule().compile();
     app = module.createNestApplication();
     await app.init();
 
@@ -63,20 +64,7 @@ describe('GET /api/branches/{branchId}/reviews', () => {
     foreignReview = await demoReview('Вымышленная компания Юг', 'Южный');
 
     await database.transaction(async (manager) => {
-      for (const role of roles) {
-        const { email, password } = accounts[role];
-        const salt = randomBytes(16).toString('hex');
-        const passwordHash = `scrypt:${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
-        await manager.query(
-          'INSERT INTO users (company_id, email, password_hash, role) VALUES ($1, $2, $3, $4)',
-          [
-            role === 'client' ? ownReview.companyId : null,
-            email,
-            passwordHash,
-            role,
-          ],
-        );
-      }
+      await insertTestAccounts(manager, accounts, ownReview.companyId);
     });
     accountsCreated = true;
   });
@@ -84,24 +72,12 @@ describe('GET /api/branches/{branchId}/reviews', () => {
   afterAll(async () => {
     try {
       if (accountsCreated) {
-        await database.query(
-          'DELETE FROM users WHERE email = ANY($1::text[])',
-          [[accounts.client.email, accounts.admin.email]],
-        );
+        await deleteTestAccounts(database.manager, accounts);
       }
     } finally {
       await app?.close();
     }
   });
-
-  async function accessToken(role: keyof typeof accounts): Promise<string> {
-    const login = await request(app.getHttpServer())
-      .post('/api/auth/login')
-      .send(accounts[role])
-      .expect(200);
-    expect(login.body.accessToken).toBeTruthy();
-    return login.body.accessToken;
-  }
 
   function reviews(branchId: number) {
     return request(app.getHttpServer()).get(
@@ -129,7 +105,7 @@ describe('GET /api/branches/{branchId}/reviews', () => {
   }
 
   it('возвращает клиенту отзывы только выбранного филиала его компании', async () => {
-    const token = await accessToken('client');
+    const token = await loginAs(app, accounts.client);
     const response = await reviews(ownReview.branchId)
       .set('Authorization', `Bearer ${token}`)
       .expect(200)
@@ -139,7 +115,7 @@ describe('GET /api/branches/{branchId}/reviews', () => {
   });
 
   it('применяет фильтры и возвращает пустую страницу для отзыва другого филиала той же компании', async () => {
-    const token = await accessToken('client');
+    const token = await loginAs(app, accounts.client);
 
     await reviews(ownReview.branchId)
       .set('Authorization', `Bearer ${token}`)
@@ -148,7 +124,7 @@ describe('GET /api/branches/{branchId}/reviews', () => {
   });
 
   it('возвращает администратору отзывы выбранного филиала другой компании', async () => {
-    const token = await accessToken('admin');
+    const token = await loginAs(app, accounts.admin);
     const response = await reviews(foreignReview.branchId)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -157,7 +133,7 @@ describe('GET /api/branches/{branchId}/reviews', () => {
   });
 
   it('возвращает 403 для запроса отзывов филиала чужой компании', async () => {
-    const token = await accessToken('client');
+    const token = await loginAs(app, accounts.client);
 
     await reviews(foreignReview.branchId)
       .set('Authorization', `Bearer ${token}`)
@@ -169,7 +145,7 @@ describe('GET /api/branches/{branchId}/reviews', () => {
   });
 
   it('возвращает 400 для неизвестного статуса отзыва', async () => {
-    const token = await accessToken('client');
+    const token = await loginAs(app, accounts.client);
     const response = await reviews(ownReview.branchId)
       .set('Authorization', `Bearer ${token}`)
       .query({ status: 'archived' })
@@ -183,7 +159,7 @@ describe('GET /api/branches/{branchId}/reviews', () => {
   });
 
   it('возвращает 404 для отсутствующего филиала', async () => {
-    const token = await accessToken('admin');
+    const token = await loginAs(app, accounts.admin);
 
     await reviews(2147483647)
       .set('Authorization', `Bearer ${token}`)

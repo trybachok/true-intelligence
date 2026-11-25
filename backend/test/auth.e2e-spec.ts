@@ -1,9 +1,8 @@
-import { randomBytes, randomUUID, scryptSync } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { AppModule } from '../src/app.module.js';
+import { hashTestPassword, httpTestModule } from './http-test-support.js';
 
 describe('POST /api/auth/login', () => {
   const email = `login-${randomUUID()}@example.test`;
@@ -14,15 +13,12 @@ describe('POST /api/auth/login', () => {
   let userId: number;
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    const module = await httpTestModule().compile();
     app = module.createNestApplication();
     await app.init();
 
     database = app.get(DataSource);
-    const salt = randomBytes(16).toString('hex');
-    const passwordHash = `scrypt:${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
+    const passwordHash = hashTestPassword(password);
     const [company] = await database.query<{ id: number }[]>(
       'INSERT INTO companies (name) VALUES ($1) RETURNING id',
       ['Login test company'],

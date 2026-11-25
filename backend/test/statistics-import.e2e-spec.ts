@@ -1,10 +1,14 @@
-import { randomBytes, randomUUID, scryptSync } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { vi } from 'vitest';
-import { AppModule } from '../src/app.module.js';
+import {
+  deleteTestAccounts,
+  httpTestModule,
+  insertTestAccounts,
+  loginAs,
+} from './http-test-support.js';
 
 type ImportInput = { branchId: number; from: string; to: string };
 
@@ -18,7 +22,6 @@ type Metric = {
 };
 
 describe('POST /api/statistics/imports', () => {
-  const roles = ['client', 'admin'] as const;
   const accounts = {
     client: {
       email: `statistics-client-${randomUUID()}@example.test`,
@@ -42,7 +45,7 @@ describe('POST /api/statistics/imports', () => {
   let fixture: { companyId: number; branchId: number };
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({ imports: [AppModule] })
+    const module = await httpTestModule()
       .overrideProvider('STATISTICS_SOURCE')
       .useValue({ fetchMetrics })
       .compile();
@@ -60,15 +63,7 @@ describe('POST /api/statistics/imports', () => {
         [companyId, 'Филиал для теста импорта'],
       );
 
-      for (const role of roles) {
-        const { email, password } = accounts[role];
-        const salt = randomBytes(16).toString('hex');
-        const passwordHash = `scrypt:${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
-        await manager.query(
-          'INSERT INTO users (company_id, email, password_hash, role) VALUES ($1, $2, $3, $4)',
-          [role === 'client' ? companyId : null, email, passwordHash, role],
-        );
-      }
+      await insertTestAccounts(manager, accounts, companyId);
 
       return { companyId, branchId };
     });
@@ -82,10 +77,7 @@ describe('POST /api/statistics/imports', () => {
             'DELETE FROM daily_metrics WHERE branch_id = $1',
             [fixture.branchId],
           );
-          await manager.query(
-            'DELETE FROM users WHERE email = ANY($1::text[])',
-            [[accounts.client.email, accounts.admin.email]],
-          );
+          await deleteTestAccounts(manager, accounts);
           await manager.query('DELETE FROM branches WHERE id = $1', [
             fixture.branchId,
           ]);
@@ -113,15 +105,6 @@ describe('POST /api/statistics/imports', () => {
        FROM daily_metrics WHERE branch_id = $1 ORDER BY metric_date`,
       [fixture.branchId],
     );
-  }
-
-  async function accessToken(role: keyof typeof accounts): Promise<string> {
-    const login = await request(app.getHttpServer())
-      .post('/api/auth/login')
-      .send(accounts[role])
-      .expect(200);
-    expect(login.body.accessToken).toBeTruthy();
-    return login.body.accessToken;
   }
 
   function importInput(): ImportInput {
@@ -156,28 +139,62 @@ describe('POST /api/statistics/imports', () => {
     ];
   }
 
-  it('сохраняет статистику, повторяет импорт без дублей и обновляет изменённые значения', async () => {
-    const token = await accessToken('admin');
-    const input = importInput();
+  async function importMetrics(token: string, metrics: Metric[]): Promise<void> {
+    fetchMetrics.mockResolvedValue(metrics);
+    await importStatistics(token)
+      .send(importInput())
+      .expect(200, { processedDays: metrics.length });
+  }
+
+  async function expectDailyMetrics(token: string, metric: Metric): Promise<void> {
+    const { branchId, date, cardViews, ...counters } = metric;
+    await request(app.getHttpServer())
+      .get('/api/analytics')
+      .set('Authorization', `Bearer ${token}`)
+      .query({ branchId, from: date, to: date })
+      .expect(200, {
+        totals: { cardViews, ...counters, averageRating: null, reviewCount: 0 },
+        dailyCardViews: [{ date, cardViews }],
+      });
+  }
+
+  it('сохраняет статистику за каждый импортированный день', async () => {
+    const token = await loginAs(app, accounts.admin);
     const [first, second] = sourceMetrics();
-    fetchMetrics.mockResolvedValue([first, second]);
 
-    for (let attempt = 0; attempt < 2; attempt++) {
-      await importStatistics(token)
-        .send(input)
-        .expect(200, { processedDays: 2 });
-      expect(await savedMetrics()).toEqual([first, second]);
-    }
-    expect(fetchMetrics.mock.calls).toEqual([[input], [input]]);
+    await importMetrics(token, [first, second]);
 
+    expect(fetchMetrics.mock.calls).toEqual([[importInput()]]);
+    await expectDailyMetrics(token, first);
+    await expectDailyMetrics(token, second);
+  });
+
+  it('не удваивает счётчики при повторном импорте', async () => {
+    const token = await loginAs(app, accounts.admin);
+    const [first, second] = sourceMetrics();
+    await importMetrics(token, [first, second]);
+
+    await importMetrics(token, [first, second]);
+
+    expect(fetchMetrics.mock.calls).toEqual([[importInput()], [importInput()]]);
+    await expectDailyMetrics(token, first);
+    await expectDailyMetrics(token, second);
+  });
+
+  it('заменяет показатели за день и сохраняет показатели пропущенного дня', async () => {
+    const token = await loginAs(app, accounts.admin);
+    const [first, second] = sourceMetrics();
+    await importMetrics(token, [first, second]);
     const updated = { ...first, cardViews: 99 };
-    fetchMetrics.mockResolvedValue([updated]);
-    await importStatistics(token).send(input).expect(200, { processedDays: 1 });
-    expect(await savedMetrics()).toEqual([updated, second]);
+
+    await importMetrics(token, [updated]);
+
+    await expectDailyMetrics(token, updated);
+    await expectDailyMetrics(token, second);
   });
 
   it('возвращает 200 и ноль обработанных дней при пустом ответе источника', async () => {
-    const token = await accessToken('admin');
+    const token = await loginAs(app, accounts.admin);
     fetchMetrics.mockResolvedValue([]);
 
     await importStatistics(token)
@@ -194,7 +211,7 @@ describe('POST /api/statistics/imports', () => {
   ] as const)(
     'возвращает 502 и сохраняет пустую таблицу для случая «%s»',
     async (scenario) => {
-      const token = await accessToken('admin');
+      const token = await loginAs(app, accounts.admin);
       const [first, second] = sourceMetrics();
       const invalid = {
         'отрицательный счётчик': { ...second, calls: -1 },
@@ -212,7 +229,7 @@ describe('POST /api/statistics/imports', () => {
   );
 
   it('возвращает 502 при ошибке источника', async () => {
-    const token = await accessToken('admin');
+    const token = await loginAs(app, accounts.admin);
     fetchMetrics.mockRejectedValue(new Error('Ошибка внешнего источника'));
 
     await importStatistics(token)
@@ -222,7 +239,7 @@ describe('POST /api/statistics/imports', () => {
   });
 
   it('возвращает 504, если источник сообщает о тайм-ауте', async () => {
-    const token = await accessToken('admin');
+    const token = await loginAs(app, accounts.admin);
     fetchMetrics.mockRejectedValue(
       new DOMException('Тайм-аут источника', 'TimeoutError'),
     );
@@ -268,7 +285,7 @@ describe('POST /api/statistics/imports', () => {
     });
 
     try {
-      const token = await accessToken('admin');
+      const token = await loginAs(app, accounts.admin);
       await importStatistics(token).send(importInput()).expect(500, {
         statusCode: 500,
         code: 'INTERNAL_ERROR',
@@ -284,7 +301,7 @@ describe('POST /api/statistics/imports', () => {
   });
 
   it('возвращает 403, если импорт запускает клиент', async () => {
-    await importStatistics(await accessToken('client'))
+    await importStatistics(await loginAs(app, accounts.client))
       .send(importInput())
       .expect(403, {
         statusCode: 403,
@@ -295,7 +312,7 @@ describe('POST /api/statistics/imports', () => {
 
   it('возвращает 400 для периода с обратным порядком дат', async () => {
     const { branchId, from, to } = importInput();
-    const response = await importStatistics(await accessToken('admin'))
+    const response = await importStatistics(await loginAs(app, accounts.admin))
       .send({ branchId, from: to, to: from })
       .expect(400);
     expect(response.body).toMatchObject({
@@ -306,7 +323,7 @@ describe('POST /api/statistics/imports', () => {
   });
 
   it('возвращает 404 для отсутствующего филиала', async () => {
-    await importStatistics(await accessToken('admin'))
+    await importStatistics(await loginAs(app, accounts.admin))
       .send({ ...importInput(), branchId: 2147483647 })
       .expect(404, {
         statusCode: 404,

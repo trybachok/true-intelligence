@@ -1,13 +1,16 @@
-import { randomBytes, randomUUID, scryptSync } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { AppModule } from '../src/app.module.js';
+import {
+  deleteTestAccounts,
+  httpTestModule,
+  insertTestAccounts,
+  loginAs,
+} from './http-test-support.js';
 
 describe('GET /api/analytics', () => {
   const period = { from: '2025-01-15', to: '2025-01-17' };
-  const roles = ['client', 'admin'] as const;
   const accounts = {
     client: {
       email: `analytics-client-${randomUUID()}@example.test`,
@@ -30,9 +33,7 @@ describe('GET /api/analytics', () => {
   };
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    const module = await httpTestModule().compile();
     app = module.createNestApplication();
     await app.init();
 
@@ -64,15 +65,7 @@ describe('GET /api/analytics', () => {
       const secondBranchId = await branchId(ownCompanyId, 'Второй филиал');
       const otherBranchId = await branchId(otherCompanyId, 'Чужой филиал');
 
-      for (const role of roles) {
-        const { email, password } = accounts[role];
-        const salt = randomBytes(16).toString('hex');
-        const passwordHash = `scrypt:${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
-        await manager.query(
-          'INSERT INTO users (company_id, email, password_hash, role) VALUES ($1, $2, $3, $4)',
-          [role === 'client' ? ownCompanyId : null, email, passwordHash, role],
-        );
-      }
+      await insertTestAccounts(manager, accounts, ownCompanyId);
 
       await manager.query(
         `INSERT INTO daily_metrics (branch_id, metric_date, card_views, website_clicks, calls, route_requests)
@@ -128,10 +121,7 @@ describe('GET /api/analytics', () => {
             'DELETE FROM daily_metrics WHERE branch_id = ANY($1::integer[])',
             [branchIds],
           );
-          await manager.query(
-            'DELETE FROM users WHERE email = ANY($1::text[])',
-            [[accounts.client.email, accounts.admin.email]],
-          );
+          await deleteTestAccounts(manager, accounts);
           await manager.query(
             'DELETE FROM branches WHERE id = ANY($1::integer[])',
             [branchIds],
@@ -147,15 +137,6 @@ describe('GET /api/analytics', () => {
     }
   });
 
-  async function accessToken(role: keyof typeof accounts): Promise<string> {
-    const login = await request(app.getHttpServer())
-      .post('/api/auth/login')
-      .send(accounts[role])
-      .expect(200);
-    expect(login.body.accessToken).toBeTruthy();
-    return login.body.accessToken;
-  }
-
   function analytics(token: string) {
     return request(app.getHttpServer())
       .get('/api/analytics')
@@ -163,7 +144,7 @@ describe('GET /api/analytics', () => {
   }
 
   it('считает сводку клиента только по его филиалам и учитывает границы периода UTC', async () => {
-    await analytics(await accessToken('client'))
+    await analytics(await loginAs(app, accounts.client))
       .query(period)
       .expect(200)
       .expect('Content-Type', /application\/json/)
@@ -185,7 +166,7 @@ describe('GET /api/analytics', () => {
   });
 
   it('считает сводку администратора по обеим компаниям', async () => {
-    await analytics(await accessToken('admin'))
+    await analytics(await loginAs(app, accounts.admin))
       .query(period)
       .expect(200)
       .expect({
@@ -206,7 +187,7 @@ describe('GET /api/analytics', () => {
   });
 
   it('ограничивает аналитику выбранным филиалом', async () => {
-    await analytics(await accessToken('client'))
+    await analytics(await loginAs(app, accounts.client))
       .query({
         ...period,
         companyId: fixture.ownCompanyId,
@@ -231,7 +212,7 @@ describe('GET /api/analytics', () => {
   });
 
   it('возвращает нулевые счётчики и null для рейтинга за период без данных', async () => {
-    await analytics(await accessToken('client'))
+    await analytics(await loginAs(app, accounts.client))
       .query({ from: '2025-01-19', to: '2025-01-19' })
       .expect(200)
       .expect({
@@ -248,7 +229,7 @@ describe('GET /api/analytics', () => {
   });
 
   it('возвращает 403 для чужого филиала', async () => {
-    await analytics(await accessToken('client'))
+    await analytics(await loginAs(app, accounts.client))
       .query({ ...period, branchId: fixture.otherBranchId })
       .expect(403, {
         statusCode: 403,
@@ -258,7 +239,7 @@ describe('GET /api/analytics', () => {
   });
 
   it('возвращает 400 для периода с обратным порядком дат', async () => {
-    const response = await analytics(await accessToken('client'))
+    const response = await analytics(await loginAs(app, accounts.client))
       .query({ from: period.to, to: period.from })
       .expect(400);
     expect(response.body).toMatchObject({
@@ -269,7 +250,7 @@ describe('GET /api/analytics', () => {
   });
 
   it('возвращает 400, если указанный филиал принадлежит другой доступной компании', async () => {
-    const response = await analytics(await accessToken('admin'))
+    const response = await analytics(await loginAs(app, accounts.admin))
       .query({
         ...period,
         companyId: fixture.ownCompanyId,

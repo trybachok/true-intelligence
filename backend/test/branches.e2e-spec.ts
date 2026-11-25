@@ -1,9 +1,13 @@
-import { randomBytes, randomUUID, scryptSync } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { AppModule } from '../src/app.module.js';
+import {
+  deleteTestAccounts,
+  httpTestModule,
+  insertTestAccounts,
+  loginAs,
+} from './http-test-support.js';
 
 type Branch = { id: number; companyId: number; name: string };
 
@@ -29,9 +33,7 @@ describe('GET /api/companies/{companyId}/branches', () => {
   };
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    const module = await httpTestModule().compile();
     app = module.createNestApplication();
     await app.init();
 
@@ -60,15 +62,7 @@ describe('GET /api/companies/{companyId}/branches', () => {
         [ownCompanyId, otherCompanyId],
       );
 
-      for (const role of ['client', 'admin'] as const) {
-        const { email, password } = account[role];
-        const salt = randomBytes(16).toString('hex');
-        const passwordHash = `scrypt:${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
-        await manager.query(
-          'INSERT INTO users (company_id, email, password_hash, role) VALUES ($1, $2, $3, $4)',
-          [role === 'client' ? ownCompanyId : null, email, passwordHash, role],
-        );
-      }
+      await insertTestAccounts(manager, account, ownCompanyId);
 
       return {
         ownCompanyId,
@@ -88,10 +82,7 @@ describe('GET /api/companies/{companyId}/branches', () => {
       if (fixture) {
         const companyIds = [fixture.ownCompanyId, fixture.otherCompanyId];
         await database.transaction(async (manager) => {
-          await manager.query(
-            'DELETE FROM users WHERE email = ANY($1::text[])',
-            [[account.client.email, account.admin.email]],
-          );
+          await deleteTestAccounts(manager, account);
           await manager.query(
             'DELETE FROM branches WHERE company_id = ANY($1::integer[])',
             [companyIds],
@@ -107,17 +98,8 @@ describe('GET /api/companies/{companyId}/branches', () => {
     }
   });
 
-  async function accessToken(role: keyof typeof account): Promise<string> {
-    const response = await request(app.getHttpServer())
-      .post('/api/auth/login')
-      .send(account[role])
-      .expect(200);
-    expect(response.body.accessToken).toBeTruthy();
-    return response.body.accessToken;
-  }
-
   it('возвращает клиенту филиалы его компании в порядке возрастания id', async () => {
-    const token = await accessToken('client');
+    const token = await loginAs(app, account.client);
 
     await request(app.getHttpServer())
       .get(`/api/companies/${fixture.ownCompanyId}/branches`)
@@ -128,7 +110,7 @@ describe('GET /api/companies/{companyId}/branches', () => {
   });
 
   it('возвращает администратору филиалы выбранной компании', async () => {
-    const token = await accessToken('admin');
+    const token = await loginAs(app, account.admin);
 
     await request(app.getHttpServer())
       .get(`/api/companies/${fixture.otherCompanyId}/branches`)
@@ -139,7 +121,7 @@ describe('GET /api/companies/{companyId}/branches', () => {
   });
 
   it('запрещает клиенту читать филиалы чужой компании', async () => {
-    const token = await accessToken('client');
+    const token = await loginAs(app, account.client);
 
     await request(app.getHttpServer())
       .get(`/api/companies/${fixture.otherCompanyId}/branches`)
