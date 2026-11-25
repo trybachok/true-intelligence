@@ -15,7 +15,6 @@ services:
         - action: sync
           path: ./frontend
           target: /app
-          initial_sync: true
           ignore:
             - Dockerfile
             - package.json
@@ -35,6 +34,8 @@ services:
     environment:
       PORT: "3000"
       DATABASE_URL: &database-url postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      OBSERVE_APP_KEY: ${OBSERVE_APP_KEY:-}
+      OBSERVE_APP_SECRET: ${OBSERVE_APP_SECRET:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -48,7 +49,6 @@ services:
         - action: sync+restart
           path: ./backend
           target: /app
-          initial_sync: true
           ignore:
             - Dockerfile
             - package.json

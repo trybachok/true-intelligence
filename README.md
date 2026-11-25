@@ -46,7 +46,7 @@
 ## Запуск сервисов
 
 ```bash
-docker compose --env-file .env.example up --build --watch
+docker compose --env-file .env up --build --watch
 ```
 
 Команда запускает сервисы с демонстрационной конфигурацией и включает обновление контейнеров при изменении исходников.
@@ -55,17 +55,23 @@ docker compose --env-file .env.example up --build --watch
 - Бэкенд — [http://localhost:3020](http://localhost:3020). Проверка подключения к PostgreSQL — `GET /api/health`. На странице фронтенда её запускает кнопка «Проверить подключение».
 - PostgreSQL доступен внутри Compose по адресу `db:5432`. Имя базы, пользователь и пароль задаются в файле окружения.
 
+### NestJS Observe
+
+Для подключения мониторинга задайте `OBSERVE_APP_KEY` и `OBSERVE_APP_SECRET` в `.env`. Получить их можно командой 
+`npx @nestjs/observe@latest link` из каталога `backend` и подтверждением кода в браузере. 
+Если ключи не заданы, Observe не подключается.
+
 Compose применяет миграции TypeORM из `db/migrations` по порядку. Первая создаёт схему, вторая загружает вымышленные данные.
 После успешного завершения сервиса `migrate` запускается NestJS. Дни отчёта и границы периода определяются по UTC.
 
 ```bash
-docker compose --env-file .env.example run --rm --build migrate
+docker compose --env-file .env run --rm --build migrate
 ```
 
 Команда применяет новые миграции. TypeORM хранит версии обеих миграций в таблице `migrations` и пропускает уже применённые.
 
 ```bash
-docker compose --env-file .env.example run --rm --build migrate npm run migration:revert
+docker compose --env-file .env run --rm --build migrate npm run migration:revert
 ```
 
 Команда откатывает последнюю применённую миграцию. В исходной схеме первый вызов удаляет демонстрационные записи, второй удаляет таблицы кабинета вместе с их содержимым. Для ручного отката сначала остановите бэкенд. Если демонстрационная миграция была применена до перехода на автоматические идентификаторы, откатите только её и затем примените миграции повторно.
@@ -75,13 +81,13 @@ docker compose --env-file .env.example run --rm --build migrate npm run migratio
 Спецификация OpenAPI находится в `contracts/openapi.yaml`. Она описывает реализованные технические маршруты и целевой контракт кабинета. Для прикладных операций в ней указаны параметры, проверка прав, форматы ответов и ошибки. Обновляйте её в одном изменении с сервером и клиентом.
 
 ```bash
-docker compose --env-file .env.example exec backend npm test
+docker compose --env-file .env exec backend npm test
 ```
 
 Команда запускает модульные тесты в контейнере бэкенда.
 
 ```bash
-docker compose --env-file .env.example exec backend npm run test:e2e
+docker compose --env-file .env exec backend npm run test:e2e
 ```
 
 Команда запускает HTTP-тесты, в том числе проверку ответов при доступной и недоступной базе.
