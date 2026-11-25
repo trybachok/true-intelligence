@@ -60,8 +60,8 @@ describe('GET /api/branches/{branchId}/reviews', () => {
       return review;
     }
 
-    ownReview = await demoReview('Вымышленная компания Север', 'Центральный');
-    foreignReview = await demoReview('Вымышленная компания Юг', 'Южный');
+    ownReview = await demoReview('Север', 'Центральный');
+    foreignReview = await demoReview('Юг', 'Южный');
 
     await database.transaction(async (manager) => {
       await insertTestAccounts(manager, accounts, ownReview.companyId);

@@ -31,9 +31,14 @@ function initialPeriod() {
   };
 }
 
-function useData<T>(path: string | null, token: string) {
+function useData<T>(
+  path: string | null,
+  token: string,
+  keepPreviousData = false,
+) {
   const [result, setResult] = useState<{
     path: string;
+    token: string;
     data?: T;
     error?: string;
   }>();
@@ -46,12 +51,13 @@ function useData<T>(path: string | null, token: string) {
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
     }).then(
       (data) => {
-        if (!controller.signal.aborted) setResult({ path, data });
+        if (!controller.signal.aborted) setResult({ path, token, data });
       },
       (error: unknown) => {
         if (!controller.signal.aborted) {
           setResult({
             path,
+            token,
             error:
               error instanceof Error
                 ? error.message
@@ -63,10 +69,16 @@ function useData<T>(path: string | null, token: string) {
     return () => controller.abort();
   }, [path, token]);
 
+  const sameSession = result?.token === token;
+  const current = sameSession && result?.path === path;
+  const loading = path !== null && !current;
+
   return {
-    data: result?.path === path ? result.data : undefined,
-    error: result?.path === path ? result.error : undefined,
-    loading: path !== null && path !== result?.path,
+    data: current || (loading && sameSession && keepPreviousData)
+      ? result?.data
+      : undefined,
+    error: current ? result?.error : undefined,
+    loading,
   };
 }
 
@@ -101,6 +113,7 @@ export function Dashboard({ session }: { session: Session }) {
   const report = useData<Report>(
     validPeriod ? `/api/analytics?${query}` : null,
     accessToken,
+    true,
   );
 
   return (
@@ -188,8 +201,8 @@ export function Dashboard({ session }: { session: Session }) {
         </p>
       )}
       {report.loading && (
-        <p className="status" role="status">
-          Загружаем отчёт…
+        <p className={report.data ? "sr-only" : "status"} role="status">
+          {report.data ? "Обновляем отчёт…" : "Загружаем отчёт…"}
         </p>
       )}
       {report.error && (
@@ -197,7 +210,11 @@ export function Dashboard({ session }: { session: Session }) {
           {report.error}
         </p>
       )}
-      {report.data && <ReportView report={report.data} />}
+      {report.data && (
+        <div aria-busy={report.loading}>
+          <ReportView report={report.data} />
+        </div>
+      )}
     </main>
   );
 }

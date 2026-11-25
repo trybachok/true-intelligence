@@ -78,6 +78,7 @@ export default function Home() {
                   name="email"
                   type="email"
                   autoComplete="username"
+                  placeholder="admin@example.test или client@example.test"
                   required
                   maxLength={254}
                 />
@@ -88,6 +89,7 @@ export default function Home() {
                   name="password"
                   type="password"
                   autoComplete="current-password"
+                  placeholder="как логин до @"
                   required
                 />
               </label>
