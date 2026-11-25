@@ -135,6 +135,42 @@ describe('GET /api/companies/{companyId}/branches', () => {
       });
   });
 
+  it('учитывает смену компании после выдачи токена', async () => {
+    const token = await loginAs(app, account.client);
+    await database.query('UPDATE users SET company_id = $1 WHERE email = $2', [
+      fixture.otherCompanyId,
+      account.client.email,
+    ]);
+    try {
+      await request(app.getHttpServer())
+        .get(`/api/companies/${fixture.ownCompanyId}/branches`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      await request(app.getHttpServer())
+        .get(`/api/companies/${fixture.otherCompanyId}/branches`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200, fixture.otherBranches);
+    } finally {
+      await database.query(
+        'UPDATE users SET company_id = $1 WHERE email = $2',
+        [fixture.ownCompanyId, account.client.email],
+      );
+    }
+  });
+
+  it('возвращает 404 для отсутствующей компании', async () => {
+    const token = await loginAs(app, account.client);
+
+    await request(app.getHttpServer())
+      .get('/api/companies/2147483647/branches')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404, {
+        statusCode: 404,
+        code: 'NOT_FOUND',
+        message: 'Компания или филиал не найдены',
+      });
+  });
+
   it('возвращает ошибку аутентификации для запроса без токена', async () => {
     await request(app.getHttpServer())
       .get(`/api/companies/${fixture.ownCompanyId}/branches`)

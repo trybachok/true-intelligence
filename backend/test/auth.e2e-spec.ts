@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
+import { JwtSigner } from '@nestjs/authentication';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { hashTestPassword, httpTestModule } from './http-test-support.js';
@@ -51,7 +52,7 @@ describe('POST /api/auth/login', () => {
   it('возвращает Bearer-токен и профиль клиента при верных учётных данных', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ email, password })
+      .send({ email: email.toUpperCase(), password })
       .expect(200)
       .expect('Content-Type', /application\/json/)
       .expect('Cache-Control', 'no-store');
@@ -64,8 +65,72 @@ describe('POST /api/auth/login', () => {
     });
     expect(response.body.accessToken.length).toBeGreaterThan(0);
     expect(Number.isInteger(response.body.expiresIn)).toBe(true);
-    expect(response.body.expiresIn).toBeGreaterThan(0);
+    expect(response.body.expiresIn).toBe(900);
+
+    const [user] = await database.query<{ password_hash: string }[]>(
+      'SELECT password_hash FROM users WHERE id = $1',
+      [userId],
+    );
+    expect(user.password_hash).toMatch(/^\$2b\$/);
+    await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email, password })
+      .expect(200);
   });
+
+  it.each([
+    { email: 'invalid', password },
+    { email, password: 123 },
+    { email, password, role: 'admin' },
+  ])('отклоняет невалидное тело', async (body) => {
+    const response = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send(body)
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('возвращает ошибку для синтаксически неверного JSON', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .type('json')
+      .send('{')
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('принимает только JSON', async () => {
+    await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .type('text')
+      .send('credentials')
+      .expect(415, {
+        statusCode: 415,
+        code: 'UNSUPPORTED_MEDIA_TYPE',
+        message: 'Требуется тело в формате JSON',
+      });
+  });
+
+  it.each(['просроченный', 'подписанный другим ключом'])(
+    'отклоняет %s токен на защищённом маршруте',
+    async (kind) => {
+      const expired = kind === 'просроченный';
+      const token = new JwtSigner({
+        key: expired ? process.env.JWT_SECRET! : randomBytes(32),
+        issuer: 'true-intelligence',
+        now: () => Date.now() - (expired ? 3600000 : 0),
+      }).sign({ sub: String(userId) });
+
+      await request(app.getHttpServer())
+        .get('/api/companies')
+        .auth(token, { type: 'bearer' })
+        .expect(401, {
+          statusCode: 401,
+          code: 'UNAUTHENTICATED',
+          message: 'Требуется вход в систему',
+        });
+    },
+  );
 
   it('возвращает одинаковую ошибку при неверном пароле и неизвестном email', async () => {
     const wrongPassword = await request(app.getHttpServer())

@@ -266,6 +266,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
+      bearerFormat: JWT
       description: Токен, выданный при входе. Передаётся в заголовке Authorization как Bearer <token>.
 
   headers:

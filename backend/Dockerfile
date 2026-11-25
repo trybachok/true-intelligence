@@ -9,4 +9,4 @@ RUN npm ci
 
 COPY --chown=node:node . .
 
-CMD ["npm", "run", "start"]
+CMD ["./node_modules/.bin/nest", "start"]

@@ -3,6 +3,8 @@ import { createObserveModule } from '@nestjs/observe';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { AuthModule } from './auth/auth.module.js';
+import { CompaniesModule } from './companies/companies.module.js';
 
 const { ObserveModule, ObserveInstrument } = createObserveModule();
 const appKey = process.env.OBSERVE_APP_KEY;
@@ -29,6 +31,8 @@ export const observeInstrument = observe ? ObserveInstrument : undefined;
       connectTimeoutMS: 2000,
       extra: { query_timeout: 2000 },
     }),
+    AuthModule,
+    CompaniesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
