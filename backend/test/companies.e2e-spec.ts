@@ -2,7 +2,11 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { hashTestPassword, httpTestModule, loginAs } from './http-test-support.js';
+import {
+  hashTestPassword,
+  httpTestModule,
+  loginAs,
+} from './http-test-support.js';
 
 describe('GET /api/companies', () => {
   let app: INestApplication;

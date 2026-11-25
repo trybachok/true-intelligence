@@ -26,7 +26,12 @@ export async function insertTestAccounts(
     const { email, password } = accounts[role];
     await manager.query(
       'INSERT INTO users (company_id, email, password_hash, role) VALUES ($1, $2, $3, $4)',
-      [role === 'client' ? companyId : null, email, hashTestPassword(password), role],
+      [
+        role === 'client' ? companyId : null,
+        email,
+        hashTestPassword(password),
+        role,
+      ],
     );
   }
 }
